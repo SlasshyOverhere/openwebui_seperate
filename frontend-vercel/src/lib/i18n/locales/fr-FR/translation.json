@@ -1434,6 +1434,7 @@
 	"Theme": "Thème",
 	"Thinking...": "En train de réfléchir...",
 	"Thinking Process": "Processus de réflexion",
+	"Model is thinking...": "Le modèle réfléchit...",
 	"This action cannot be undone. Do you wish to continue?": "Cette action ne peut pas être annulée. Souhaitez-vous continuer ?",
 	"This channel was created on {{createdAt}}. This is the very beginning of the {{channelName}} channel.": "Ce canal a été créé le {{createdAt}}. Voici le tout début du canal {{channelName}}.",
 	"This chat won't appear in history and your messages will not be saved.": "Cette conversation n'apparaîtra pas dans l'historique et vos messages ne seront pas enregistrés.",

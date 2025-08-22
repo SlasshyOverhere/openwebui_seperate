@@ -1562,6 +1562,8 @@
 					childrenIds: [],
 					role: 'assistant',
 					content: '',
+					reasoning_content: '',
+					done: false,
 					model: model.id,
 					modelName: model.name ?? model.id,
 					modelIdx: modelIdx ? modelIdx : _modelIdx,

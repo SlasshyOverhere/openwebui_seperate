@@ -805,7 +805,7 @@
 									<Skeleton />
 								{:else if message.content && message.error !== true}
 									<!-- Display reasoning content if available -->
-									{#if message.reasoning_content && message.reasoning_content.trim() !== ''}
+									{#if message.reasoning_content !== undefined}
 										<div class="reasoning-container reasoning-reveal">
 											<div class="reasoning-header-collapsed" class:expanded={reasoningExpanded}>
 												<button 
@@ -818,7 +818,7 @@
 														<span class="reasoning-title">{$i18n.t('Thinking Process')}</span>
 													{:else}
 														<span class="reasoning-icon thinking-animation">🤔</span>
-														<span class="reasoning-title thinking-text">{$i18n.t('Thinking')}...</span>
+														<span class="reasoning-title thinking-text">{$i18n.t('Thinking Process')}</span>
 													{/if}
 													<span class="reasoning-arrow" class:expanded={reasoningExpanded}>▼</span>
 												</button>
@@ -827,10 +827,14 @@
 											{#if reasoningExpanded}
 												<div class="reasoning-content-expanded" transition:flyAndScale={{ duration: 200 }}>
 													<div class="reasoning-content">
-														{#if message.done}
-															{message.reasoning_content}
+														{#if message.reasoning_content && message.reasoning_content.trim() !== ''}
+															{#if message.done}
+																{message.reasoning_content}
+															{:else}
+																<span class="streaming-text">{message.reasoning_content}</span>
+															{/if}
 														{:else}
-															<span class="streaming-text">{message.reasoning_content}</span>
+															<span class="thinking-placeholder">{$i18n.t('Model is thinking...')}</span>
 														{/if}
 													</div>
 												</div>

@@ -720,6 +720,12 @@ body {
 	}
 }
 
+/* Thinking placeholder styling */
+.thinking-placeholder {
+	@apply text-gray-500 dark:text-gray-400 italic;
+	animation: thinkingPulse 2s ease-in-out infinite;
+}
+
 .reasoning-complete {
 	@apply text-green-600 dark:text-green-400;
 }
