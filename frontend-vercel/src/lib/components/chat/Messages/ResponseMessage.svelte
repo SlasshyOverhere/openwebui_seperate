@@ -57,6 +57,7 @@
 		id: string;
 		model: string;
 		content: string;
+		reasoning_content?: string;
 		files?: { type: string; url: string }[];
 		timestamp: number;
 		role: string;
@@ -800,7 +801,19 @@
 								{#if message.content === '' && !message.error && (message?.statusHistory ?? [...(message?.status ? [message?.status] : [])]).length === 0}
 									<Skeleton />
 								{:else if message.content && message.error !== true}
-									<!-- always show message contents even if there's an error -->
+									<!-- Display reasoning content if available -->
+									{#if message.reasoning_content && message.reasoning_content.trim() !== ''}
+										<div class="reasoning-container reasoning-reveal">
+											<details type="reasoning" done="true" duration="3" class="reasoning-details">
+												<summary class="reasoning-header">
+													🤔 {$i18n.t('Thinking Process')}
+												</summary>
+												<div class="reasoning-content">
+													{message.reasoning_content}
+												</div>
+											</details>
+										</div>
+									{/if}
 									<!-- unless message.error === true which is legacy error handling, where the error message is stored in message.content -->
 									<ContentRenderer
 										id={`${chatId}-${message.id}`}
@@ -1325,7 +1338,7 @@
 													<path
 														stroke-linecap="round"
 														stroke-linejoin="round"
-														d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+														d="M21 12a9 9 0 1 1-18 0 9 9 0 0118 0Z"
 													/>
 													<path
 														stroke-linecap="round"

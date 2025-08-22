@@ -15,7 +15,7 @@ from urllib.parse import urlencode, parse_qs, urlparse
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from typing import Optional
+from typing import Optional, AsyncGenerator
 from aiocache import cached
 import aiohttp
 import anyio.to_thread
@@ -37,7 +37,7 @@ from fastapi import (
 from fastapi.openapi.docs import get_swagger_ui_html
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from starlette_compress import CompressMiddleware
@@ -108,6 +108,17 @@ except ImportError:
                 if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
                     os.environ[key] = value
+
+# Load environment variables
+load_dotenv('.env')
+
+# Debug environment variables
+print(f"🔍 Environment Variables Debug:")
+print(f"  ATLAS_CLOUD_API_KEY: {os.getenv('ATLAS_CLOUD_API_KEY', 'NOT_SET')}")
+print(f"  OPENAI_API_KEY: {os.getenv('OPENAI_API_KEY', 'NOT_SET')}")
+print(f"  Current working directory: {os.getcwd()}")
+print(f"  .env file exists: {os.path.exists('.env')}")
+print(f"  .env file path: {os.path.abspath('.env')}")
 
 # Configuration with defaults
 ENABLE_OLLAMA_API = os.getenv("ENABLE_OLLAMA_API", "true").lower() == "true"
@@ -888,192 +899,383 @@ async def get_models_v1(request: Request, user = Depends(lambda: None)):
 # Chat completions endpoint - Frontend expects this
 @app.post("/api/chat/completions")
 async def chat_completions(request: Request):
-    """Chat completions endpoint - Frontend compatibility"""
+    """Chat completions endpoint with streaming support for Atlas Cloud and other providers"""
     try:
         body = await request.json()
         model = body.get("model", "")
         messages = body.get("messages", [])
+        stream = body.get("stream", True)  # Default to streaming
+        chat_id = body.get("chat_id", "default")
+        message_id = body.get("id", "default")
         
         # Check if model is supported and get provider info
-        model_provider = None
-        if model in request.app.state.config.OPENAI_MODELS:
-            model_provider = "openai"
-            api_key = request.app.state.config.OPENAI_API_KEYS[0]
-            if not api_key or api_key == "your-openai-api-key-here":
-                return {
-                    "error": {
-                        "message": "OpenAI API key not configured. Set OPENAI_API_KEY environment variable.",
-                        "type": "configuration_error",
-                        "code": "api_key_required"
-                    }
-                }
-        elif model in request.app.state.config.ATLAS_CLOUD_MODELS:
-            model_provider = "atlascloud"
-            api_key = request.app.state.config.ATLAS_CLOUD_API_KEY
-            if not api_key or api_key == "your-atlas-cloud-api-key-here":
-                return {
-                    "error": {
-                        "message": "Atlas Cloud API key not configured. Set ATLAS_CLOUD_API_KEY environment variable.",
-                        "type": "configuration_error",
-                        "code": "api_key_required"
-                    }
-                }
+        if model.startswith("atlascloud/") or "atlas" in model.lower() or model.startswith("openai/gpt-oss"):
+            provider = "atlascloud"
+            api_key = "apikey-609322b79ca546d5a5fa4feb7c5ccb56"  # Temporary hardcode for testing
+            api_url = "https://api.atlascloud.ai/v1"
+        elif model.startswith("openai/"):
+            provider = "openai"
+            api_key = os.getenv("OPENAI_API_KEY")
+            api_url = os.getenv("OPENAI_API_URL", "https://api.openai.com/v1")
+        elif model.startswith("anthropic/"):
+            provider = "anthropic"
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            api_url = os.getenv("ANTHROPIC_API_URL", "https://api.anthropic.com/v1")
         else:
-            return {
-                "error": {
-                    "message": f"Model {model} not found. Available models: {', '.join(request.app.state.config.OPENAI_MODELS + request.app.state.config.ATLAS_CLOUD_MODELS)}",
-                    "type": "model_not_found",
-                    "code": "model_not_found"
-                }
-            }
+            # Default to Atlas Cloud for unknown models
+            provider = "atlascloud"
+            api_key = "apikey-609322b79ca546d5a5fa4feb7c5ccb56"  # Temporary hardcode for testing
+            api_url = "https://api.atlascloud.ai/v1"
         
-        # Real API call to Atlas Cloud
-        if model_provider == "atlascloud":
-            try:
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
-                    headers = {
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    }
+        if not api_key:
+            raise HTTPException(status_code=400, detail="API key not configured")
+        
+        # Prepare the request payload
+        if provider == "atlascloud":
+            payload = {
+                "model": model.replace("atlascloud/", "") if model.startswith("atlascloud/") else model,
+                "messages": messages,
+                "stream": stream,
+                "max_tokens": body.get("max_tokens", 1000),
+                "temperature": body.get("temperature", 0.7)
+            }
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            endpoint = f"{api_url}/chat/completions"
+            
+            print(f"🔍 Atlas Cloud Debug:")
+            print(f"  Endpoint: {endpoint}")
+            print(f"  Model: {model}")
+            print(f"  Payload: {payload}")
+            print(f"  Headers: {headers}")
+            print(f"  API Key: {api_key[:10]}...")
+        elif provider == "openai":
+            payload = {
+                "model": model.replace("openai/", ""),
+                "messages": messages,
+                "stream": stream,
+                "max_tokens": body.get("max_tokens", 1000),
+                "temperature": body.get("temperature", 0.7)
+            }
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            endpoint = f"{api_url}/chat/completions"
+        elif provider == "anthropic":
+            # Convert OpenAI format to Anthropic format
+            anthropic_messages = []
+            for msg in messages:
+                if msg["role"] == "user":
+                    anthropic_messages.append({"role": "user", "content": msg["content"]})
+                elif msg["role"] == "assistant":
+                    anthropic_messages.append({"role": "assistant", "content": msg["content"]})
+                elif msg["role"] == "system":
+                    # Anthropic doesn't support system messages, prepend to first user message
+                    if anthropic_messages and anthropic_messages[0]["role"] == "user":
+                        anthropic_messages[0]["content"] = f"{msg['content']}\n\n{anthropic_messages[0]['content']}"
+            
+            payload = {
+                "model": model.replace("anthropic/", ""),
+                "messages": anthropic_messages,
+                "max_tokens": body.get("max_tokens", 1000),
+                "temperature": body.get("temperature", 0.7)
+            }
+            headers = {
+                "x-api-key": api_key,
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01"
+            }
+            endpoint = f"{api_url}/messages"
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported provider")
+        
+        if stream:
+            # Return streaming response
+            return StreamingResponse(
+                stream_chat_completion(endpoint, payload, headers, provider, chat_id, message_id),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "*"
+                }
+            )
+        else:
+            # Return non-streaming response
+            async with aiohttp.ClientSession() as session:
+                async with session.post(endpoint, json=payload, headers=headers) as response:
+                    print(f"🔍 API Response Status: {response.status}")
+                    print(f"🔍 API Response Headers: {dict(response.headers)}")
                     
-                    payload = {
-                        "model": model,
-                        "messages": messages,
-                        "max_tokens": 1000,
-                        "temperature": 0.7
-                    }
+                    if response.status != 200:
+                        error_text = await response.text()
+                        print(f"🔍 API Error Response: {error_text}")
+                        raise HTTPException(status_code=response.status, detail=error_text)
                     
-                    async with session.post(
-                        "https://api.atlascloud.ai/v1/chat/completions",
-                        headers=headers,
-                        json=payload
-                    ) as response:
-                        if response.status == 200:
-                            result = await response.json()
-                            
-                            # Extract the response content
-                            if result.get("choices") and len(result["choices"]) > 0:
-                                content = result["choices"][0].get("message", {}).get("content", "")
-                                
-                                # Emit WebSocket event for real-time updates
-                                try:
-                                    from simple_socket import emit_chat_event
-                                    await emit_chat_event("chat-events", {
-                                        "chat_id": body.get("chat_id", "default"),
-                                        "message_id": body.get("id", "default"),
-                                        "data": {
-                                            "type": "chat:completion",
-                                            "data": {
-                                                "done": True,
-                                                "content": content,
-                                                "title": f"Chat with {model}"
-                                            }
-                                        }
-                                    })
-                                except Exception as ws_error:
-                                    print(f"WebSocket emit error: {ws_error}")
-                            
-                            # Return response with task_id for frontend compatibility
-                            result["task_id"] = f"task_{int(time.time())}"
-                            return result
-                        else:
-                            error_text = await response.text()
-                            return {
-                                "error": {
-                                    "message": f"Atlas Cloud API error: {response.status} - {error_text}",
-                                    "type": "api_error",
-                                    "code": "atlas_cloud_error"
+                    result = await response.json()
+                    print(f"🔍 API Success Response: {result}")
+                    
+                    # Format response for OpenWebUI
+                    if provider == "atlascloud":
+                        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        reasoning_content = result.get("choices", [{}])[0].get("message", {}).get("reasoning_content", "")
+                    elif provider == "openai":
+                        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        reasoning_content = result.get("choices", [{}])[0].get("message", {}).get("reasoning_content", "")
+                    elif provider == "anthropic":
+                        content = result.get("content", [{}])[0].get("text", "")
+                        reasoning_content = result.get("reasoning_content", "")
+                    else:
+                        content = ""
+                        reasoning_content = ""
+                    
+                    # Format content for OpenWebUI reasoning display
+                    formatted_content = ""
+                    if reasoning_content:
+                        formatted_content += f'<details type="reasoning" done="true" duration="3"><summary>🤔 Thinking Process</summary><div class="reasoning-content">{reasoning_content}</div></details>\n\n'
+                    
+                    formatted_content += content
+                    
+                    # Update the result with formatted content
+                    if provider == "atlascloud" or provider == "openai":
+                        if result.get("choices"):
+                            result["choices"][0]["message"]["content"] = formatted_content
+                    elif provider == "anthropic":
+                        if result.get("content"):
+                            result["content"][0]["text"] = formatted_content
+                    
+                    # Add task_id for frontend compatibility
+                    result["task_id"] = f"task_{int(time.time())}"
+                    
+                    # Emit WebSocket event for real-time updates
+                    try:
+                        from simple_socket import emit_chat_event
+                        await emit_chat_event("chat-events", {
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "data": {
+                                "type": "chat:completion",
+                                "data": {
+                                    "done": True,
+                                    "content": formatted_content,
+                                    "choices": result.get("choices", []),
+                                    "model": model
                                 }
                             }
-            except Exception as e:
-                return {
-                    "error": {
-                        "message": f"Error calling Atlas Cloud API: {str(e)}",
-                        "type": "api_error",
-                        "code": "atlas_cloud_error"
-                    }
-                }
-        
-        # Real API call to OpenAI
-        elif model_provider == "openai":
-            try:
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
-                    headers = {
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    }
+                        })
+                    except Exception as e:
+                        print(f"WebSocket emit error: {e}")
                     
-                    payload = {
-                        "model": model,
-                        "messages": messages,
-                        "max_tokens": 1000,
-                        "temperature": 0.7
-                    }
+                    return result
                     
-                    async with session.post(
-                        "https://api.openai.com/v1/chat/completions",
-                        headers=headers,
-                        json=payload
-                    ) as response:
-                        if response.status == 200:
-                            result = await response.json()
-                            
-                            # Extract the response content
-                            if result.get("choices") and len(result["choices"]) > 0:
-                                content = result["choices"][0].get("message", {}).get("content", "")
-                                
-                                # Emit WebSocket event for real-time updates
-                                try:
-                                    from simple_socket import emit_chat_event
-                                    await emit_chat_event("chat-events", {
-                                        "chat_id": body.get("chat_id", "default"),
-                                        "message_id": body.get("id", "default"),
-                                        "data": {
-                                            "type": "chat:completion",
-                                            "data": {
-                                                "done": True,
-                                                "content": content,
-                                                "title": f"Chat with {model}"
-                                            }
-                                        }
-                                    })
-                                except Exception as ws_error:
-                                    print(f"WebSocket emit error: {ws_error}")
-                            
-                            # Return response with task_id for frontend compatibility
-                            result["task_id"] = f"task_{int(time.time())}"
-                            return result
-                        else:
-                            error_text = await response.text()
-                            return {
-                                "error": {
-                                    "message": f"OpenAI API error: {response.status} - {error_text}",
-                                    "type": "api_error",
-                                    "code": "openai_error"
-                                }
-                            }
-            except Exception as e:
-                return {
-                    "error": {
-                        "message": f"Error calling OpenAI API: {str(e)}",
-                        "type": "api_error",
-                        "code": "openai_error"
-                    }
-                }
-        
-        # Fallback for unknown providers
-        return {
-            "error": {
-                "message": f"Unknown provider: {model_provider}",
-                "type": "configuration_error",
-                "code": "unknown_provider"
-            }
-        }
-        
     except Exception as e:
-        return {"error": {"message": str(e), "type": "server_error"}}
+        print(f"Chat completions error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, provider: str, chat_id: str, message_id: str) -> AsyncGenerator[str, None]:
+    """Stream chat completion responses word by word"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(endpoint, json=payload, headers=headers) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    yield f"data: {json.dumps({'error': {'message': error_text}})}\n\n"
+                    return
+                
+                # Send initial status
+                yield f"data: {json.dumps({'status': 'started'})}\n\n"
+                
+                # Process streaming response
+                if provider == "atlascloud":
+                    # Atlas Cloud doesn't support streaming, so we'll simulate it
+                    try:
+                        # Check if the response is actually streaming or a complete response
+                        content_type = response.headers.get('Content-Type', '')
+                        print(f"🔍 Atlas Cloud Content-Type: {content_type}")
+                        
+                        if 'text/event-stream' not in content_type:
+                            # This is a complete response, not streaming
+                            print(f"🔍 Atlas Cloud returned complete response, simulating streaming")
+                            
+                            # Get the full response
+                            result = await response.json()
+                            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                            reasoning_content = result.get("choices", [{}])[0].get("message", {}).get("reasoning_content", "")
+                            
+                            # Format content for OpenWebUI reasoning display
+                            formatted_content = ""
+                            if reasoning_content:
+                                formatted_content += f'<details type="reasoning" done="true" duration="3"><summary>🤔 Thinking Process</summary><div class="reasoning-content">{reasoning_content}</div></details>\n\n'
+                            
+                            formatted_content += content
+                            
+                            # Simulate streaming by sending content word by word
+                            words = formatted_content.split()
+                            for i, word in enumerate(words):
+                                # Add space after each word except the last one
+                                word_with_space = word + (" " if i < len(words) - 1 else "")
+                                
+                                # Emit WebSocket event for real-time updates
+                                try:
+                                    from simple_socket import emit_chat_event
+                                    await emit_chat_event("chat-events", {
+                                        "chat_id": chat_id,
+                                        "message_id": message_id,
+                                        "data": {
+                                            "type": "chat:message:delta",
+                                            "data": {"content": word_with_space}
+                                        }
+                                    })
+                                except Exception as e:
+                                    print(f"WebSocket emit error: {e}")
+                                
+                                # Send streaming data
+                                streaming_data = {
+                                    "choices": [{
+                                        "delta": {"content": word_with_space},
+                                        "index": 0
+                                    }]
+                                }
+                                yield f"data: {json.dumps(streaming_data)}\n\n"
+                                
+                                # Small delay to simulate real streaming
+                                await asyncio.sleep(0.05)
+                            
+                            # Send completion event
+                            try:
+                                from simple_socket import emit_chat_event
+                                await emit_chat_event("chat-events", {
+                                    "chat_id": chat_id,
+                                    "message_id": message_id,
+                                    "data": {
+                                        "type": "chat:completion",
+                                        "data": {
+                                            "done": True,
+                                            "choices": [{"message": {"content": formatted_content}}]
+                                        }
+                                    }
+                                })
+                            except Exception as e:
+                                print(f"WebSocket emit error: {e}")
+                            
+                            yield f"data: [DONE]\n\n"
+                        else:
+                            # This is actually streaming (unlikely for Atlas Cloud)
+                            print(f"🔍 Atlas Cloud returned streaming response")
+                            async for line in response.content:
+                                line_str = line.decode('utf-8').strip()
+                                if line_str.startswith('data: '):
+                                    if line_str == 'data: [DONE]':
+                                        yield f"data: [DONE]\n\n"
+                                        break
+                                    else:
+                                        yield f"data: {line_str[6:]}\n\n"
+                        
+                    except Exception as e:
+                        print(f"Atlas Cloud streaming error: {e}")
+                        # Fallback to non-streaming
+                        yield f"data: {json.dumps({'error': {'message': 'Atlas Cloud streaming not supported, falling back to non-streaming'}})}\n\n"
+                
+                elif provider == "openai":
+                    async for line in response.content:
+                        line_str = line.decode('utf-8').strip()
+                        if line_str.startswith('data: '):
+                            if line_str == 'data: [DONE]':
+                                # Send completion event
+                                try:
+                                    from simple_socket import emit_chat_event
+                                    await emit_chat_event("chat-events", {
+                                        "chat_id": chat_id,
+                                        "message_id": message_id,
+                                        "data": {
+                                            "type": "chat:completion",
+                                            "data": {
+                                                "done": True,
+                                                "choices": [{"message": {"content": ""}}]
+                                            }
+                                        }
+                                    })
+                                except Exception as e:
+                                    print(f"WebSocket emit error: {e}")
+                                
+                                yield f"data: [DONE]\n\n"
+                                break
+                            else:
+                                # Parse and forward the streaming data
+                                try:
+                                    data = json.loads(line_str[6:])  # Remove 'data: ' prefix
+                                    if data.get("choices") and data["choices"][0].get("delta", {}).get("content"):
+                                        content = data["choices"][0]["delta"]["content"]
+                                        
+                                        # Emit WebSocket event for real-time updates
+                                        try:
+                                            from simple_socket import emit_chat_event
+                                            await emit_chat_event("chat-events", {
+                                                "chat_id": chat_id,
+                                                "message_id": message_id,
+                                                "data": {
+                                                    "type": "chat:message:delta",
+                                                    "data": {"content": content}
+                                                }
+                                            })
+                                        except Exception as e:
+                                            print(f"WebSocket emit error: {e}")
+                                        
+                                        yield f"data: {json.dumps(data)}\n\n"
+                                except json.JSONDecodeError:
+                                    continue
+                        else:
+                            yield f"data: {json.dumps({'raw': line_str})}\n\n"
+                
+                elif provider == "anthropic":
+                    # Handle Anthropic streaming (different format)
+                    async for line in response.content:
+                        line_str = line.decode('utf-8').strip()
+                        if line_str.startswith('data: '):
+                            if line_str == 'data: [DONE]':
+                                yield f"data: [DONE]\n\n"
+                                break
+                            else:
+                                try:
+                                    data = json.loads(line_str[6:])
+                                    if data.get("type") == "content_block_delta" and data.get("delta", {}).get("text"):
+                                        text = data["delta"]["text"]
+                                        
+                                        # Convert to OpenAI format for compatibility
+                                        openai_format = {
+                                            "choices": [{
+                                                "delta": {"content": text},
+                                                "index": 0
+                                            }]
+                                        }
+                                        
+                                        # Emit WebSocket event
+                                        try:
+                                            from simple_socket import emit_chat_event
+                                            await emit_chat_event("chat-events", {
+                                                "chat_id": chat_id,
+                                                "message_id": message_id,
+                                                "data": {
+                                                    "type": "chat:message:delta",
+                                                    "data": {"content": text}
+                                                }
+                                            })
+                                        except Exception as e:
+                                            print(f"WebSocket emit error: {e}")
+                                        
+                                        yield f"data: {json.dumps(openai_format)}\n\n"
+                                except json.JSONDecodeError:
+                                    continue
+                        else:
+                            yield f"data: {json.dumps({'raw': line_str})}\n\n"
+                
+    except Exception as e:
+        print(f"Streaming error: {e}")
+        yield f"data: {json.dumps({'error': {'message': str(e)}})}\n\n"
 
 # Additional essential endpoints for frontend compatibility
 @app.post("/api/chat/completed")

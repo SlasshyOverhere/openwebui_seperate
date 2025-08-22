@@ -637,3 +637,61 @@ body {
 	background: #171717;
 	color: #eee;
 }
+
+/* Enhanced Reasoning Display Styles */
+.reasoning-container {
+	@apply border-l-4 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-950/20 rounded-r-lg p-4 mb-4;
+}
+
+.reasoning-header {
+	@apply flex items-center gap-2 mb-3 text-blue-700 dark:text-blue-300 font-medium;
+}
+
+.reasoning-content {
+	@apply text-gray-700 dark:text-gray-300 leading-relaxed;
+}
+
+.reasoning-thinking {
+	@apply animate-pulse text-blue-600 dark:text-blue-400;
+}
+
+.reasoning-complete {
+	@apply text-green-600 dark:text-green-400;
+}
+
+/* Smooth reasoning reveal animation */
+@keyframes reasoningReveal {
+	0% {
+		opacity: 0;
+		transform: translateY(-10px);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.reasoning-reveal {
+	animation: reasoningReveal 0.5s ease-out;
+}
+
+/* Shimmer effect for thinking state */
+@keyframes shimmer {
+	0% {
+		background-position: -200px 0;
+	}
+	100% {
+		background-position: calc(200px + 100%) 0;
+	}
+}
+
+.reasoning-shimmer {
+	background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+	background-size: 200px 100%;
+	animation: shimmer 2s infinite;
+}
+
+.dark .reasoning-shimmer {
+	background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+	background-size: 200px 100%;
+}

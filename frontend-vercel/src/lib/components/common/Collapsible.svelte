@@ -113,21 +113,35 @@
 
 				<div class="">
 					{#if attributes?.type === 'reasoning'}
-						{#if attributes?.done === 'true' && attributes?.duration}
-							{#if attributes.duration < 1}
-								{$i18n.t('Thought for less than a second')}
-							{:else if attributes.duration < 60}
-								{$i18n.t('Thought for {{DURATION}} seconds', {
-									DURATION: attributes.duration
-								})}
-							{:else}
-								{$i18n.t('Thought for {{DURATION}}', {
-									DURATION: dayjs.duration(attributes.duration, 'seconds').humanize()
-								})}
+						<div class="flex items-center gap-2">
+							{#if attributes?.done && attributes?.done !== 'true'}
+								<div class="animate-pulse">
+									<Spinner className="size-4" />
+								</div>
 							{/if}
-						{:else}
-							{$i18n.t('Thinking...')}
-						{/if}
+							
+							<div class="flex items-center gap-2">
+								{#if attributes?.done === 'true' && attributes?.duration}
+									<span class="text-green-600 dark:text-green-400">
+										{#if attributes.duration < 1}
+											{$i18n.t('Thought for less than a second')}
+										{:else if attributes.duration < 60}
+											{$i18n.t('Thought for {{DURATION}} seconds', {
+												DURATION: attributes.duration
+											})}
+										{:else}
+											{$i18n.t('Thought for {{DURATION}}', {
+												DURATION: dayjs.duration(attributes.duration, 'seconds').humanize()
+											})}
+										{/if}
+									</span>
+								{:else}
+									<span class="text-blue-600 dark:text-blue-400 animate-pulse">
+										{$i18n.t('Thinking...')}
+									</span>
+								{/if}
+							</div>
+						</div>
 					{:else if attributes?.type === 'code_interpreter'}
 						{#if attributes?.done === 'true'}
 							{$i18n.t('Analyzed')}

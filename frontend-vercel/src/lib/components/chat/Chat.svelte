@@ -332,8 +332,15 @@
 					history.messages = { ...history.messages };
 					console.log('Forced reactivity update for chat:completion');
 				} else if (type === 'chat:message:delta' || type === 'message') {
-					console.log('Processing message delta:', data.content);
+					console.log('🎯 STREAMING EVENT RECEIVED:', { type, data, message_id: event.message_id });
+					console.log('Current message content before update:', message.content);
+					console.log('Delta content to add:', data.content);
 					message.content += data.content;
+					console.log('Updated message content:', message.content);
+					
+					// Force reactivity update for streaming
+					history.messages = { ...history.messages };
+					console.log('Forced reactivity update for streaming');
 				} else if (type === 'chat:message' || type === 'replace') {
 					console.log('Processing message replace:', data.content);
 					message.content = data.content;
@@ -1827,6 +1834,103 @@
 		});
 
 		if (res) {
+			// Check if this is a streaming response
+			if (res instanceof Response && res.body) {
+				// This is a streaming response, handle it directly
+				console.log('🔍 Streaming response received, processing directly');
+				
+				if (res.ok) {
+					// Process the streaming response
+					const reader = res.body.getReader();
+					const decoder = new TextDecoder();
+					
+					const processStream = async () => {
+						while (true) {
+							// Read data chunks from the response stream
+							const { done, value } = await reader.read();
+							if (done) {
+								break;
+							}
+							
+							// Decode the received chunk
+							const chunk = decoder.decode(value, { stream: true });
+							
+							// Process lines within the chunk
+							const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+							
+							for (const line of lines) {
+								console.log('🔍 Processing streaming line:', line);
+								
+								// Handle Server-Sent Events (SSE) format
+								if (line.startsWith('data: ')) {
+									// Extract the data part after "data: " prefix
+									const dataContent = line.slice(6); // Remove "data: " prefix
+									
+									// Check if it's the end marker
+									if (dataContent === '[DONE]') {
+										console.log('🎯 Streaming completed');
+										responseMessage.done = true;
+										history.messages[responseMessageId] = responseMessage;
+										history.currentId = responseMessageId;
+										history.messages = { ...history.messages }; // Force reactivity update
+										break;
+									} else {
+										try {
+											// Parse the JSON content
+											const parsedData = JSON.parse(dataContent);
+											
+											// Handle the streaming data
+											if (parsedData.choices && parsedData.choices[0]?.delta?.content) {
+												// This is a streaming content update
+												const content = parsedData.choices[0].delta.content;
+												console.log('🎯 Adding content:', content);
+												responseMessage.content += content;
+												history.messages[responseMessageId] = responseMessage;
+												history.messages = { ...history.messages }; // Force reactivity update
+												
+												if (autoScroll) {
+													scrollToBottom();
+												}
+											} else if (parsedData.choices && parsedData.choices[0]?.delta?.reasoning_content) {
+												// This is reasoning content
+												const reasoningContent = parsedData.choices[0].delta.reasoning_content;
+												if (reasoningContent) {
+													console.log('🧠 Adding reasoning content:', reasoningContent);
+													if (!responseMessage.reasoning_content) {
+														responseMessage.reasoning_content = '';
+													}
+													responseMessage.reasoning_content += reasoningContent;
+													history.messages[responseMessageId] = responseMessage;
+													history.messages = { ...history.messages }; // Force reactivity update
+												}
+											}
+										} catch (parseError) {
+											console.warn('Failed to parse SSE data:', dataContent, parseError);
+										}
+									}
+								}
+							}
+						}
+					};
+					
+					// Process the stream in the background
+					processStream().catch(error => {
+						console.error('Error processing stream:', error);
+						responseMessage.error = { content: error };
+						responseMessage.done = true;
+						history.messages[responseMessageId] = responseMessage;
+						history.messages = { ...history.messages };
+					});
+					
+					return;
+				} else {
+					// Handle error response
+					const errorData = await res.json();
+					await handleOpenAIError(errorData, responseMessage);
+				}
+			}
+			
+			// Handle non-streaming response
 			if (res.error) {
 				await handleOpenAIError(res.error, responseMessage);
 			} else {

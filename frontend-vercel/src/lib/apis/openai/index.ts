@@ -375,6 +375,15 @@ export const generateOpenAIChatCompletion = async (
 		body: JSON.stringify(body)
 	})
 		.then(async (res) => {
+			// Check if this is a streaming response
+			const contentType = res.headers.get('content-type');
+			if (contentType && contentType.includes('text/event-stream')) {
+				// For streaming responses, return the response object directly
+				// The layout will handle the streaming
+				return res;
+			}
+			
+			// For non-streaming responses, parse as JSON
 			if (!res.ok) throw await res.json();
 			return res.json();
 		})

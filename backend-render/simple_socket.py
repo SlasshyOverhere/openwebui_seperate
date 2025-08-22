@@ -65,15 +65,21 @@ async def chat_events(sid, data):
 async def emit_chat_event(event_type, data, room="chat"):
     """Emit chat events to connected clients"""
     print(f"Emitting {event_type} to room {room}: {data}")
-    await sio.emit(event_type, data, room=room)
-    print(f"Emitted {event_type} successfully")
+    try:
+        await sio.emit(event_type, data, room=room)
+        print(f"Emitted {event_type} successfully")
+    except Exception as e:
+        print(f"Error emitting {event_type}: {e}")
 
 # Function to emit chat-events (for compatibility with existing code)
 async def emit_chat_events(data, room="chat"):
     """Emit chat-events to connected clients"""
     print(f"Emitting chat-events to room {room}: {data}")
-    await sio.emit("chat-events", data, room=room)
-    print(f"Emitted chat-events successfully")
+    try:
+        await sio.emit("chat-events", data, room=room)
+        print(f"Emitted chat-events successfully")
+    except Exception as e:
+        print(f"Error emitting chat-events: {e}")
 
 # Function to get connected clients
 async def get_connected_clients():

@@ -88,6 +88,10 @@
 			if (localStorage.getItem('token')) {
 				// Emit user-join event with auth token
 				_socket.emit('user-join', { auth: { token: localStorage.token } });
+				
+				// Join the chat room to receive chat events
+				_socket.emit('join', 'chat');
+				console.log('Joined chat room');
 			} else {
 				console.warn('No token found in localStorage, user-join event not emitted');
 			}
@@ -107,6 +111,9 @@
 				console.log('Additional details:', details);
 			}
 		});
+		
+		// Listen for chat events
+		_socket.on('chat-events', handleStreamingChatCompletion);
 	};
 
 	const executePythonAsWorker = async (id, code, cb) => {
@@ -244,7 +251,14 @@
 	};
 
 	const chatEventHandler = async (event, cb) => {
-		const chat = $page.url.pathname.includes(`/c/${event.chat_id}`);
+		console.log('🔍 Layout received chat event:', event);
+		
+		if (event.data?.type === 'typing') {
+			return;
+		}
+
+		// check url path
+		const channel = $page.url.pathname.includes(`/c/${event.chat_id}`);
 
 		let isFocused = document.visibilityState !== 'visible';
 		if (window.electronAPI) {
@@ -256,146 +270,32 @@
 			}
 		}
 
-		await tick();
-		const type = event?.data?.type ?? null;
-		const data = event?.data?.data ?? null;
+		if ((!channel || isFocused) && event?.user?.id !== $user?.id) {
+			await tick();
+			const type = event?.data?.type ?? null;
+			const data = event?.data?.data ?? null;
 
-		if ((event.chat_id !== $chatId && !$temporaryChatEnabled) || isFocused) {
-			if (type === 'chat:completion') {
-				const { done, content, title } = data;
-
-				if (done) {
-					if ($settings?.notificationSoundAlways ?? false) {
-						playingNotificationSound.set(true);
-
-						const audio = new Audio(`/audio/notification.mp3`);
-						audio.play().finally(() => {
-							// Ensure the global state is reset after the sound finishes
-							playingNotificationSound.set(false);
+			if (type === 'message') {
+				if ($isLastActiveTab) {
+					if ($settings?.notificationEnabled ?? false) {
+						new Notification(`${data?.user?.name} (#${event?.channel?.name}) • Open WebUI`, {
+							body: data?.content,
+							icon: data?.user?.profile_image_url ?? `${WEBUI_BASE_URL}/static/favicon.png`
 						});
 					}
+				}
 
-					if ($isLastActiveTab) {
-						if ($settings?.notificationEnabled ?? false) {
-							new Notification(`${title} • Open WebUI`, {
-								body: content,
-								icon: `${WEBUI_BASE_URL}/static/favicon.png`
-							});
-						}
-					}
-
-					toast.custom(NotificationToast, {
-						componentProps: {
-							onClick: () => {
-								goto(`/c/${event.chat_id}`);
-							},
-							content: content,
-							title: title
+				toast.custom(NotificationToast, {
+					componentProps: {
+						onClick: () => {
+							goto(`/channels/${event.channel_id}`);
 						},
-						duration: 15000,
-						unstyled: true
-					});
-				}
-			} else if (type === 'chat:title') {
-				currentChatPage.set(1);
-				await chats.set(await getChatList(localStorage.token, $currentChatPage));
-			} else if (type === 'chat:tags') {
-				tags.set(await getAllTags(localStorage.token));
-			}
-		} else if (data?.session_id === $socket.id) {
-			if (type === 'execute:python') {
-				console.log('execute:python', data);
-				executePythonAsWorker(data.id, data.code, cb);
-			} else if (type === 'execute:tool') {
-				console.log('execute:tool', data);
-				executeTool(data, cb);
-			} else if (type === 'request:chat:completion') {
-				console.log(data, $socket.id);
-				const { session_id, channel, form_data, model } = data;
-
-				try {
-					const directConnections = $settings?.directConnections ?? {};
-
-					if (directConnections) {
-						const urlIdx = model?.urlIdx;
-
-						const OPENAI_API_URL = directConnections.OPENAI_API_BASE_URLS[urlIdx];
-						const OPENAI_API_KEY = directConnections.OPENAI_API_KEYS[urlIdx];
-						const API_CONFIG = directConnections.OPENAI_API_CONFIGS[urlIdx];
-
-						try {
-							if (API_CONFIG?.prefix_id) {
-								const prefixId = API_CONFIG.prefix_id;
-								form_data['model'] = form_data['model'].replace(`${prefixId}.`, ``);
-							}
-
-							const [res, controller] = await chatCompletion(
-								OPENAI_API_KEY,
-								form_data,
-								OPENAI_API_URL
-							);
-
-							if (res) {
-								// raise if the response is not ok
-								if (!res.ok) {
-									throw await res.json();
-								}
-
-								if (form_data?.stream ?? false) {
-									cb({
-										status: true
-									});
-									console.log({ status: true });
-
-									// res will either be SSE or JSON
-									const reader = res.body.getReader();
-									const decoder = new TextDecoder();
-
-									const processStream = async () => {
-										while (true) {
-											// Read data chunks from the response stream
-											const { done, value } = await reader.read();
-											if (done) {
-												break;
-											}
-
-											// Decode the received chunk
-											const chunk = decoder.decode(value, { stream: true });
-
-											// Process lines within the chunk
-											const lines = chunk.split('\n').filter((line) => line.trim() !== '');
-
-											for (const line of lines) {
-												console.log(line);
-												$socket?.emit(channel, line);
-											}
-										}
-									};
-
-									// Process the stream in the background
-									await processStream();
-								} else {
-									const data = await res.json();
-									cb(data);
-								}
-							} else {
-								throw new Error('An error occurred while fetching the completion');
-							}
-						} catch (error) {
-							console.error('chatCompletion', error);
-							cb(error);
-						}
-					}
-				} catch (error) {
-					console.error('chatCompletion', error);
-					cb(error);
-				} finally {
-					$socket.emit(channel, {
-						done: true
-					});
-				}
-			} else {
-				console.log('chatEventHandler', event);
+						content: data?.content,
+						title: event?.channel?.name
+					},
+					duration: 15000,
+					unstyled: true
+				});
 			}
 		}
 	};
@@ -444,6 +344,197 @@
 					duration: 15000,
 					unstyled: true
 				});
+			}
+		}
+	};
+
+	// Handle streaming chat completions
+	const handleStreamingChatCompletion = async (event, cb) => {
+		console.log('🔍 Handling streaming chat completion:', event);
+		
+		if (event.data?.type === 'request:chat:completion') {
+			const { session_id, channel, form_data, model } = event.data;
+			
+			if (session_id === $socket.id) {
+				console.log('Processing streaming chat completion for session:', session_id);
+				
+				try {
+					const directConnections = $settings?.directConnections ?? {};
+					
+					if (directConnections) {
+						const urlIdx = model?.urlIdx;
+						
+						const OPENAI_API_URL = directConnections.OPENAI_API_BASE_URLS[urlIdx];
+						const OPENAI_API_KEY = directConnections.OPENAI_API_KEYS[urlIdx];
+						const API_CONFIG = directConnections.OPENAI_API_CONFIGS[urlIdx];
+						
+						try {
+							if (API_CONFIG?.prefix_id) {
+								const prefixId = API_CONFIG.prefix_id;
+								form_data['model'] = form_data['model'].replace(`${prefixId}.`, ``);
+							}
+							
+							const [res, controller] = await chatCompletion(
+								OPENAI_API_KEY,
+								form_data,
+								OPENAI_API_URL
+							);
+							
+							if (res) {
+								// raise if the response is not ok
+								if (!res.ok) {
+									throw await res.json();
+								}
+								
+								if (form_data?.stream ?? false) {
+									cb({
+										status: true
+									});
+									console.log({ status: true });
+									
+									// res will either be SSE or JSON
+									const reader = res.body.getReader();
+									const decoder = new TextDecoder();
+									
+									const processStream = async () => {
+										while (true) {
+											// Read data chunks from the response stream
+											const { done, value } = await reader.read();
+											if (done) {
+												break;
+											}
+											
+											// Decode the received chunk
+											const chunk = decoder.decode(value, { stream: true });
+											
+											// Process lines within the chunk
+											const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+											
+											for (const line of lines) {
+												console.log('🔍 Processing streaming line:', line);
+												
+												// Handle Server-Sent Events (SSE) format
+												if (line.startsWith('data: ')) {
+													// Extract the data part after "data: " prefix
+													const dataContent = line.slice(6); // Remove "data: " prefix
+													
+													// Check if it's the end marker
+													if (dataContent === '[DONE]') {
+														// Send completion event
+														$socket?.emit('chat-events', {
+															chat_id: form_data.chat_id || 'default',
+															message_id: form_data.id || 'default',
+															data: {
+																type: 'chat:completion',
+																data: { done: true }
+															}
+														});
+													} else {
+														try {
+															// Parse the JSON content
+															const parsedData = JSON.parse(dataContent);
+															
+															// Send in the format that Chat component expects
+															if (parsedData.choices && parsedData.choices[0]?.delta?.content) {
+																// This is a streaming content update
+																$socket?.emit('chat-events', {
+																	chat_id: form_data.chat_id || 'default',
+																	message_id: form_data.id || 'default',
+																	data: {
+																		type: 'chat:message:delta',
+																		data: {
+																			content: parsedData.choices[0].delta.content
+																		}
+																	}
+																});
+															} else if (parsedData.status === 'started') {
+																// Streaming started
+																$socket?.emit('chat-events', {
+																	chat_id: form_data.chat_id || 'default',
+																	message_id: form_data.id || 'default',
+																	data: {
+																		type: 'status',
+																		data: { status: 'started' }
+																	}
+																});
+															} else if (parsedData.error) {
+																// Error occurred
+																$socket?.emit('chat-events', {
+																	chat_id: form_data.chat_id || 'default',
+																	message_id: form_data.id || 'default',
+																	data: {
+																		type: 'error',
+																		data: { error: parsedData.error }
+																	}
+																});
+															} else {
+																// Other data, send as is
+																$socket?.emit('chat-events', {
+																	chat_id: form_data.chat_id || 'default',
+																	message_id: form_data.id || 'default',
+																	data: parsedData
+																});
+															}
+														} catch (parseError) {
+															console.warn('Failed to parse SSE data:', dataContent, parseError);
+															// Send the raw data if parsing fails
+															$socket?.emit('chat-events', {
+																chat_id: form_data.chat_id || 'default',
+																message_id: form_data.id || 'default',
+																data: { raw: dataContent }
+															});
+														}
+													}
+												} else {
+													// Not an SSE line, send as is
+													$socket?.emit('chat-events', {
+														chat_id: form_data.chat_id || 'default',
+														message_id: form_data.id || 'default',
+														data: { raw: line }
+													});
+												}
+											}
+										}
+									};
+									
+									// Process the stream in the background
+									await processStream();
+								} else {
+									const data = await res.json();
+									cb(data);
+								}
+							} else {
+								throw new Error('An error occurred while fetching the completion');
+							}
+						} catch (error) {
+							console.error('chatCompletion', error);
+							cb(error);
+						} finally {
+							$socket.emit('chat-events', {
+								chat_id: form_data.chat_id || 'default',
+								message_id: form_data.id || 'default',
+								data: {
+									type: 'chat:completion',
+									data: { done: true }
+								}
+							});
+						}
+					}
+				} catch (error) {
+					console.error('chatCompletion', error);
+					cb(error);
+				} finally {
+					$socket.emit('chat-events', {
+						chat_id: form_data.chat_id || 'default',
+						message_id: form_data.id || 'default',
+						data: {
+							type: 'chat:completion',
+							data: { done: true }
+						}
+					});
+				}
+			} else {
+				console.log('Session ID mismatch, not processing event');
 			}
 		}
 	};
@@ -530,10 +621,8 @@
 
 		user.subscribe((value) => {
 			if (value) {
-				$socket?.off('chat-events', chatEventHandler);
 				$socket?.off('channel-events', channelEventHandler);
 
-				$socket?.on('chat-events', chatEventHandler);
 				$socket?.on('channel-events', channelEventHandler);
 
 				// Set up the token expiry check
@@ -542,7 +631,6 @@
 				}
 				tokenTimer = setInterval(checkTokenExpiry, 15000);
 			} else {
-				$socket?.off('chat-events', chatEventHandler);
 				$socket?.off('channel-events', channelEventHandler);
 			}
 		});
