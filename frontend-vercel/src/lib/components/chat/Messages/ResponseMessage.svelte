@@ -163,6 +163,9 @@
 
 	let showRateComment = false;
 
+	// Control reasoning content expansion
+	let reasoningExpanded = false;
+
 	const copyToClipboard = async (text) => {
 		text = removeAllDetails(text);
 
@@ -804,14 +807,34 @@
 									<!-- Display reasoning content if available -->
 									{#if message.reasoning_content && message.reasoning_content.trim() !== ''}
 										<div class="reasoning-container reasoning-reveal">
-											<details type="reasoning" done="true" duration="3" class="reasoning-details">
-												<summary class="reasoning-header">
-													🤔 {$i18n.t('Thinking Process')}
-												</summary>
-												<div class="reasoning-content">
-													{message.reasoning_content}
+											<div class="reasoning-header-collapsed" class:expanded={reasoningExpanded}>
+												<button 
+													class="reasoning-toggle-btn"
+													on:click={() => reasoningExpanded = !reasoningExpanded}
+													aria-label={reasoningExpanded ? 'Collapse reasoning' : 'Expand reasoning'}
+												>
+													{#if message.done}
+														<span class="reasoning-icon">🧠</span>
+														<span class="reasoning-title">{$i18n.t('Thinking Process')}</span>
+													{:else}
+														<span class="reasoning-icon thinking-animation">🤔</span>
+														<span class="reasoning-title thinking-text">{$i18n.t('Thinking')}...</span>
+													{/if}
+													<span class="reasoning-arrow" class:expanded={reasoningExpanded}>▼</span>
+												</button>
+											</div>
+											
+											{#if reasoningExpanded}
+												<div class="reasoning-content-expanded" transition:flyAndScale={{ duration: 200 }}>
+													<div class="reasoning-content">
+														{#if message.done}
+															{message.reasoning_content}
+														{:else}
+															<span class="streaming-text">{message.reasoning_content}</span>
+														{/if}
+													</div>
 												</div>
-											</details>
+											{/if}
 										</div>
 									{/if}
 									<!-- unless message.error === true which is legacy error handling, where the error message is stored in message.content -->

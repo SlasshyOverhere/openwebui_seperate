@@ -640,19 +640,84 @@ body {
 
 /* Enhanced Reasoning Display Styles */
 .reasoning-container {
-	@apply border-l-4 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-950/20 rounded-r-lg p-4 mb-4;
+	@apply mb-4;
 }
 
-.reasoning-header {
-	@apply flex items-center gap-2 mb-3 text-blue-700 dark:text-blue-300 font-medium;
+.reasoning-header-collapsed {
+	@apply w-full;
+}
+
+.reasoning-toggle-btn {
+	@apply w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 text-left;
+}
+
+.reasoning-toggle-btn:hover {
+	@apply bg-gray-100 dark:bg-gray-800;
+}
+
+.reasoning-icon {
+	@apply text-lg mr-3;
+}
+
+.reasoning-title {
+	@apply flex-1 text-gray-700 dark:text-gray-300 font-medium text-sm;
+}
+
+.reasoning-arrow {
+	@apply text-gray-500 dark:text-gray-400 text-xs transition-transform duration-200;
+}
+
+.reasoning-arrow.expanded {
+	transform: rotate(180deg);
+}
+
+.reasoning-content-expanded {
+	@apply mt-2 pl-4 border-l border-gray-200 dark:border-gray-700;
 }
 
 .reasoning-content {
-	@apply text-gray-700 dark:text-gray-300 leading-relaxed;
+	@apply text-gray-700 dark:text-gray-300 leading-relaxed text-sm;
 }
 
-.reasoning-thinking {
-	@apply animate-pulse text-blue-600 dark:text-blue-400;
+/* Thinking animation */
+.thinking-animation {
+	animation: thinkingPulse 2s ease-in-out infinite;
+}
+
+.thinking-text {
+	@apply text-gray-600 dark:text-gray-400;
+}
+
+@keyframes thinkingPulse {
+	0%, 100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.7;
+		transform: scale(1.1);
+	}
+}
+
+/* Streaming text animation */
+.streaming-text {
+	@apply text-gray-700 dark:text-gray-300;
+	position: relative;
+}
+
+.streaming-text::after {
+	content: '▋';
+	@apply text-gray-500 dark:text-gray-400 ml-1;
+	animation: blink 1s infinite;
+}
+
+@keyframes blink {
+	0%, 50% {
+		opacity: 1;
+	}
+	51%, 100% {
+		opacity: 0;
+	}
 }
 
 .reasoning-complete {
@@ -673,25 +738,4 @@ body {
 
 .reasoning-reveal {
 	animation: reasoningReveal 0.5s ease-out;
-}
-
-/* Shimmer effect for thinking state */
-@keyframes shimmer {
-	0% {
-		background-position: -200px 0;
-	}
-	100% {
-		background-position: calc(200px + 100%) 0;
-	}
-}
-
-.reasoning-shimmer {
-	background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-	background-size: 200px 100%;
-	animation: shimmer 2s infinite;
-}
-
-.dark .reasoning-shimmer {
-	background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
-	background-size: 200px 100%;
 }
