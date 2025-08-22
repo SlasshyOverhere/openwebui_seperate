@@ -3,3 +3,5 @@
 </script>
 
 <Chat />
+
+<!-- If you want this to be at a different path, rename or move this file. -->

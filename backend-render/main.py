@@ -52,13 +52,8 @@ from starlette.datastructures import Headers
 from utils import logger
 from utils.audit import AuditLevel, AuditLoggingMiddleware
 from utils.logger import start_logger
-from sockets.main import (
-    app as socket_app,
-    periodic_usage_pool_cleanup,
-    get_event_emitter,
-    get_models_in_use,
-    get_active_user_ids,
-)
+# Simple socket functionality for chat events
+from simple_socket import socket_app, emit_chat_event, get_connected_clients
 from routers import (
     audio,
     images,
@@ -475,6 +470,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    allow_origin_regex=None,
+    expose_headers=["*"],
+    max_age=86400,
 )
 
 # Add compression middleware
@@ -487,7 +485,7 @@ app.add_middleware(CompressMiddleware)
 app.add_middleware(AuditLoggingMiddleware, audit_level=AuditLevel.REQUEST_RESPONSE)
 
 # Add socket app
-app.mount("/socket.io", socket_app)
+app.mount("/socket.io", socket_app)  # Simple socket functionality enabled
 
 # Include all API routers
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
@@ -953,6 +951,31 @@ async def chat_completions(request: Request):
                     ) as response:
                         if response.status == 200:
                             result = await response.json()
+                            
+                            # Extract the response content
+                            if result.get("choices") and len(result["choices"]) > 0:
+                                content = result["choices"][0].get("message", {}).get("content", "")
+                                
+                                # Emit WebSocket event for real-time updates
+                                try:
+                                    from simple_socket import emit_chat_event
+                                    await emit_chat_event("chat-events", {
+                                        "chat_id": body.get("chat_id", "default"),
+                                        "message_id": body.get("id", "default"),
+                                        "data": {
+                                            "type": "chat:completion",
+                                            "data": {
+                                                "done": True,
+                                                "content": content,
+                                                "title": f"Chat with {model}"
+                                            }
+                                        }
+                                    })
+                                except Exception as ws_error:
+                                    print(f"WebSocket emit error: {ws_error}")
+                            
+                            # Return response with task_id for frontend compatibility
+                            result["task_id"] = f"task_{int(time.time())}"
                             return result
                         else:
                             error_text = await response.text()
@@ -996,6 +1019,31 @@ async def chat_completions(request: Request):
                     ) as response:
                         if response.status == 200:
                             result = await response.json()
+                            
+                            # Extract the response content
+                            if result.get("choices") and len(result["choices"]) > 0:
+                                content = result["choices"][0].get("message", {}).get("content", "")
+                                
+                                # Emit WebSocket event for real-time updates
+                                try:
+                                    from simple_socket import emit_chat_event
+                                    await emit_chat_event("chat-events", {
+                                        "chat_id": body.get("chat_id", "default"),
+                                        "message_id": body.get("id", "default"),
+                                        "data": {
+                                            "type": "chat:completion",
+                                            "data": {
+                                                "done": True,
+                                                "content": content,
+                                                "title": f"Chat with {model}"
+                                            }
+                                        }
+                                    })
+                                except Exception as ws_error:
+                                    print(f"WebSocket emit error: {ws_error}")
+                            
+                            # Return response with task_id for frontend compatibility
+                            result["task_id"] = f"task_{int(time.time())}"
                             return result
                         else:
                             error_text = await response.text()

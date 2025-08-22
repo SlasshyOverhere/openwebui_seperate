@@ -300,15 +300,24 @@
 	};
 
 	const chatEventHandler = async (event, cb) => {
-		console.log(event);
+		console.log('chatEventHandler received event:', event);
+		console.log('Current chatId:', $chatId);
+		console.log('Event chat_id:', event.chat_id);
+		console.log('Event message_id:', event.message_id);
+		console.log('History messages:', history.messages);
 
 		if (event.chat_id === $chatId) {
+			console.log('Chat ID matches, processing event');
 			await tick();
 			let message = history.messages[event.message_id];
 
 			if (message) {
+				console.log('Message found, processing:', message);
 				const type = event?.data?.type ?? null;
 				const data = event?.data?.data ?? null;
+
+				console.log('Event type:', type);
+				console.log('Event data:', data);
 
 				if (type === 'status') {
 					if (message?.statusHistory) {
@@ -317,10 +326,16 @@
 						message.statusHistory = [data];
 					}
 				} else if (type === 'chat:completion') {
+					console.log('Processing chat:completion event');
 					chatCompletionEventHandler(data, message, event.chat_id);
+					// Force reactivity update for chat:completion events
+					history.messages = { ...history.messages };
+					console.log('Forced reactivity update for chat:completion');
 				} else if (type === 'chat:message:delta' || type === 'message') {
+					console.log('Processing message delta:', data.content);
 					message.content += data.content;
 				} else if (type === 'chat:message' || type === 'replace') {
+					console.log('Processing message replace:', data.content);
 					message.content = data.content;
 				} else if (type === 'chat:message:files' || type === 'files') {
 					message.files = data.files;
@@ -398,22 +413,19 @@
 					} catch (error) {
 						console.error('Error executing code:', error);
 					}
-				} else if (type === 'input') {
-					eventCallback = cb;
-
-					eventConfirmationInput = true;
-					showEventConfirmation = true;
-
-					eventConfirmationTitle = data.title;
-					eventConfirmationMessage = data.message;
-					eventConfirmationInputPlaceholder = data.placeholder;
-					eventConfirmationInputValue = data?.value ?? '';
 				} else {
-					console.log('Unknown message type', data);
+					console.log('Unknown event type:', type);
 				}
 
-				history.messages[event.message_id] = message;
+				// Force reactivity update
+				history.messages = { ...history.messages };
+				console.log('Updated message:', history.messages[event.message_id]);
+			} else {
+				console.log('Message not found for ID:', event.message_id);
+				console.log('Available message IDs:', Object.keys(history.messages));
 			}
+		} else {
+			console.log('Chat ID mismatch - event chat_id:', event.chat_id, 'current chatId:', $chatId);
 		}
 	};
 
@@ -1235,9 +1247,11 @@
 	};
 
 	const chatCompletionEventHandler = async (data, message, chatId) => {
+		console.log('chatCompletionEventHandler called with:', { data, message, chatId });
 		const { id, done, choices, content, sources, selected_model_id, error, usage } = data;
 
 		if (error) {
+			console.log('Error in chat completion:', error);
 			await handleOpenAIError(error, message);
 		}
 
@@ -1246,16 +1260,20 @@
 		}
 
 		if (choices) {
+			console.log('Processing choices:', choices);
 			if (choices[0]?.message?.content) {
 				// Non-stream response
+				console.log('Non-stream response content:', choices[0]?.message?.content);
 				message.content += choices[0]?.message?.content;
 			} else {
 				// Stream response
 				let value = choices[0]?.delta?.content ?? '';
+				console.log('Stream response delta:', value);
 				if (message.content == '' && value == '\n') {
 					console.log('Empty response');
 				} else {
 					message.content += value;
+					console.log('Updated message content:', message.content);
 
 					if (navigator.vibrate && ($settings?.hapticFeedback ?? false)) {
 						navigator.vibrate(5);
@@ -1288,6 +1306,7 @@
 		}
 
 		if (content) {
+			console.log('Processing direct content:', content);
 			// REALTIME_CHAT_SAVE is disabled
 			message.content = content;
 
@@ -1310,10 +1329,7 @@
 				message.lastSentence = messageContentParts[messageContentParts.length - 1];
 				eventTarget.dispatchEvent(
 					new CustomEvent('chat', {
-						detail: {
-							id: message.id,
-							content: messageContentParts[messageContentParts.length - 1]
-						}
+						detail: { id: message.id, content: messageContentParts[messageContentParts.length - 1] }
 					})
 				);
 			}
@@ -1328,6 +1344,7 @@
 			message.usage = usage;
 		}
 
+		console.log('Final message content:', message.content);
 		history.messages[message.id] = message;
 
 		if (done) {
