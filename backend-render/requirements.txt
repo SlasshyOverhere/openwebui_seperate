@@ -3,13 +3,13 @@
 # FastAPI and server dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-starlette==0.27.0
+starlette>=0.27,<0.50
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
 # Database
 sqlalchemy==2.0.23
-alembic==1.12.1
+alembic>=1.14.0,<2.0
 psycopg2-binary==2.9.9
 
 # Authentication and security
@@ -19,7 +19,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.1.2
 
 # HTTP client
-aiohttp==3.9.1
+aiohttp>=3.12.15,<4
 httpx==0.25.2
 requests==2.31.0
 
@@ -80,3 +80,7 @@ opentelemetry-instrumentation-fastapi==0.42b0
 # Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
+
+# Additional dependencies for deployment
+gunicorn==21.2.0
+python-multipart==0.0.6

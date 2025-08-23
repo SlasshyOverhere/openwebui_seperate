@@ -30,17 +30,16 @@ def search_kagi(
     response = requests.get(url, headers=headers, params=params)
     response.raise_for_status()
     json_response = response.json()
-    search_results = json_response.get("data", [])
+    response_data = json_response.get("data", {})
 
-    results = [
-        SearchResult(
-            link=result["url"], title=result["title"], snippet=result.get("snippet")
-        )
-        for result in search_results
-        if result["t"] == 0
-    ]
-
-    print(results)
+    # Process results
+    results = []
+    for result in response_data.get("results", []):
+        results.append({
+            "title": result.get("title", ""),
+            "url": result.get("url", ""),
+            "snippet": result.get("excerpt", "")
+        })
 
     if filter_list:
         results = get_filtered_results(results, filter_list)

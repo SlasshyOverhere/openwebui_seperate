@@ -112,14 +112,6 @@ except ImportError:
 # Load environment variables
 load_dotenv('.env')
 
-# Debug environment variables
-print(f"🔍 Environment Variables Debug:")
-print(f"  ATLAS_CLOUD_API_KEY: {os.getenv('ATLAS_CLOUD_API_KEY', 'NOT_SET')}")
-print(f"  OPENAI_API_KEY: {os.getenv('OPENAI_API_KEY', 'NOT_SET')}")
-print(f"  Current working directory: {os.getcwd()}")
-print(f"  .env file exists: {os.path.exists('.env')}")
-print(f"  .env file path: {os.path.abspath('.env')}")
-
 # Configuration with defaults
 ENABLE_OLLAMA_API = os.getenv("ENABLE_OLLAMA_API", "true").lower() == "true"
 OLLAMA_BASE_URLS = os.getenv("OLLAMA_BASE_URLS", "http://localhost:11434").split(",")
@@ -465,19 +457,13 @@ class AppConfig:
 # Initialize app state
 app.state.config = AppConfig()
 
-# Add CORS middleware for frontend communication - Configured for localhost
+# Add CORS middleware for frontend communication - Configured from environment
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:6969,http://127.0.0.1:6969").split(",")
+cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:6969",      # Frontend dev server
-        "http://127.0.0.1:6969",     # Frontend localhost
-        "http://localhost:6970",      # Frontend dev server (backup port)
-        "http://127.0.0.1:6970",     # Frontend localhost (backup port)
-        "http://localhost:6971",      # Frontend dev server (backup port 2)
-        "http://127.0.0.1:6971",     # Frontend localhost (backup port 2)
-        "http://localhost:6972",      # Frontend dev server (backup port 3)
-        "http://127.0.0.1:6972",     # Frontend localhost (backup port 3)
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
@@ -945,12 +931,6 @@ async def chat_completions(request: Request):
             }
             endpoint = f"{api_url}/chat/completions"
             
-            print(f"🔍 Atlas Cloud Debug:")
-            print(f"  Endpoint: {endpoint}")
-            print(f"  Model: {model}")
-            print(f"  Payload: {payload}")
-            print(f"  Headers: {headers}")
-            print(f"  API Key: {api_key[:10]}...")
         elif provider == "openai":
             payload = {
                 "model": model.replace("openai/", ""),
@@ -1008,16 +988,12 @@ async def chat_completions(request: Request):
             # Return non-streaming response
             async with aiohttp.ClientSession() as session:
                 async with session.post(endpoint, json=payload, headers=headers) as response:
-                    print(f"🔍 API Response Status: {response.status}")
-                    print(f"🔍 API Response Headers: {dict(response.headers)}")
                     
                     if response.status != 200:
                         error_text = await response.text()
-                        print(f"🔍 API Error Response: {error_text}")
                         raise HTTPException(status_code=response.status, detail=error_text)
                     
                     result = await response.json()
-                    print(f"🔍 API Success Response: {result}")
                     
                     # Format response for OpenWebUI
                     if provider == "atlascloud":
@@ -1068,12 +1044,11 @@ async def chat_completions(request: Request):
                             }
                         })
                     except Exception as e:
-                        print(f"WebSocket emit error: {e}")
+                        pass
                     
                     return result
                     
     except Exception as e:
-        print(f"Chat completions error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, provider: str, chat_id: str, message_id: str) -> AsyncGenerator[str, None]:
@@ -1095,11 +1070,9 @@ async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, pr
                     try:
                         # Check if the response is actually streaming or a complete response
                         content_type = response.headers.get('Content-Type', '')
-                        print(f"🔍 Atlas Cloud Content-Type: {content_type}")
                         
                         if 'text/event-stream' not in content_type:
                             # This is a complete response, not streaming
-                            print(f"🔍 Atlas Cloud returned complete response, simulating streaming")
                             
                             # Get the full response
                             result = await response.json()
@@ -1131,7 +1104,7 @@ async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, pr
                                         }
                                     })
                                 except Exception as e:
-                                    print(f"WebSocket emit error: {e}")
+                                    pass
                                 
                                 # Send streaming data
                                 streaming_data = {
@@ -1160,12 +1133,11 @@ async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, pr
                                     }
                                 })
                             except Exception as e:
-                                print(f"WebSocket emit error: {e}")
+                                pass
                             
                             yield f"data: [DONE]\n\n"
                         else:
                             # This is actually streaming (unlikely for Atlas Cloud)
-                            print(f"🔍 Atlas Cloud returned streaming response")
                             async for line in response.content:
                                 line_str = line.decode('utf-8').strip()
                                 if line_str.startswith('data: '):
@@ -1176,9 +1148,7 @@ async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, pr
                                         yield f"data: {line_str[6:]}\n\n"
                         
                     except Exception as e:
-                        print(f"Atlas Cloud streaming error: {e}")
-                        # Fallback to non-streaming
-                        yield f"data: {json.dumps({'error': {'message': 'Atlas Cloud streaming not supported, falling back to non-streaming'}})}\n\n"
+                        pass
                 
                 elif provider == "openai":
                     async for line in response.content:
@@ -1200,7 +1170,7 @@ async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, pr
                                         }
                                     })
                                 except Exception as e:
-                                    print(f"WebSocket emit error: {e}")
+                                    pass
                                 
                                 yield f"data: [DONE]\n\n"
                                 break
@@ -1223,7 +1193,7 @@ async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, pr
                                                 }
                                             })
                                         except Exception as e:
-                                            print(f"WebSocket emit error: {e}")
+                                            pass
                                         
                                         yield f"data: {json.dumps(data)}\n\n"
                                 except json.JSONDecodeError:
@@ -1265,7 +1235,7 @@ async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, pr
                                                 }
                                             })
                                         except Exception as e:
-                                            print(f"WebSocket emit error: {e}")
+                                            pass
                                         
                                         yield f"data: {json.dumps(openai_format)}\n\n"
                                 except json.JSONDecodeError:
@@ -1274,7 +1244,6 @@ async def stream_chat_completion(endpoint: str, payload: dict, headers: dict, pr
                             yield f"data: {json.dumps({'raw': line_str})}\n\n"
                 
     except Exception as e:
-        print(f"Streaming error: {e}")
         yield f"data: {json.dumps({'error': {'message': str(e)}})}\n\n"
 
 # Additional essential endpoints for frontend compatibility

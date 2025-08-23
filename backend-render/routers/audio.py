@@ -834,7 +834,6 @@ def transcribe(request: Request, file_path: str, metadata: Optional[dict] = None
     # Always produce a list of chunk paths (could be one entry if small)
     try:
         chunk_paths = split_audio(file_path, MAX_FILE_SIZE)
-        print(f"Chunk paths: {chunk_paths}")
     except Exception as e:
         log.exception(e)
         raise HTTPException(
@@ -932,7 +931,10 @@ def split_audio(file_path, max_bytes, format="mp3", bitrate="32k"):
         start = end
         i += 1
 
-    return chunks
+    # Get chunk paths
+    chunk_paths = [chunk.path for chunk in chunks]
+
+    return {"chunks": chunk_paths}
 
 
 @router.post("/transcriptions")
