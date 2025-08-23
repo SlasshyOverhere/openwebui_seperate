@@ -6,6 +6,7 @@ uvicorn[standard]==0.24.0
 starlette>=0.27.0,<0.28.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
+starlette-compress==1.0.0
 
 # Database
 sqlalchemy==2.0.23
