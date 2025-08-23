@@ -1,10 +1,9 @@
-# OpenWebUI Backend Dependencies (Python 3.12 compatible)
+# OpenWebUI Backend Dependencies (Python 3.11 compatible)
 
 # FastAPI and server dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-starlette>=0.27,<0.50
-starlette-compress==1.0.0
+starlette>=0.27.0,<0.28.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
@@ -18,6 +17,7 @@ python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.2
+itsdangerous==2.1.1
 
 # HTTP client
 aiohttp>=3.12.15,<4
@@ -26,8 +26,6 @@ requests==2.31.0
 
 # Redis
 redis==5.0.1
-# aioredis is deprecated, redis-py >=4 includes asyncio support
-#aioredis==2.0.1   # ❌ remove
 
 # File handling
 python-magic==0.4.27
@@ -64,13 +62,13 @@ sentence-transformers==2.2.2
 
 # Audio processing
 pydub==0.25.1
-openai-whisper==20231117   # ✅ PyPI name is openai-whisper, not whisper
+openai-whisper==20231117
 
 # Image processing
 opencv-python==4.8.1.78
 
 # Code execution
-jupyter-client>=8.6,<10   # ✅ fixed (9.0.0 is allowed)
+jupyter-client>=8.6,<10
 ipykernel==6.27.1
 
 # Monitoring and telemetry
@@ -82,8 +80,5 @@ opentelemetry-instrumentation-fastapi==0.42b0
 pytest==7.4.3
 pytest-asyncio==0.21.1
 
-aiocache==0.12.2
-
 # Additional dependencies for deployment
 gunicorn==21.2.0
-python-multipart==0.0.6
