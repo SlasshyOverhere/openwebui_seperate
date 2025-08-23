@@ -81,6 +81,8 @@ opentelemetry-instrumentation-fastapi==0.42b0
 pytest==7.4.3
 pytest-asyncio==0.21.1
 
+aiocache==0.12.2
+
 # Additional dependencies for deployment
 gunicorn==21.2.0
 python-multipart==0.0.6
