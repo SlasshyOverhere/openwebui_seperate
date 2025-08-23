@@ -1,0 +1,91 @@
+services:
+  - type: web
+    name: openwebui-backend
+    env: python
+    plan: starter
+    pythonVersion: "3.11.18"
+    rootDir: backend-render
+    buildCommand: python3.11 -m pip install --upgrade pip setuptools wheel && python3.11 -m pip install -r requirements.txt
+    startCommand: python start_production.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.18"
+      - key: PORT
+        value: 10000
+      - key: ENV
+        value: production
+      - key: PYTHONPATH
+        value: "."
+      - key: DATABASE_URL
+        fromDatabase:
+          name: openwebui-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: openwebui-redis
+          property: connectionString
+      - key: WEBUI_SECRET_KEY
+        generateValue: true
+      - key: ENABLE_SIGNUP
+        value: "true"
+      - key: ENABLE_LOGIN_FORM
+        value: "true"
+      - key: ENABLE_ATLAS_CLOUD_API
+        value: "true"
+      - key: ENABLE_OLLAMA_API
+        value: "false"
+      - key: ENABLE_OPENAI_API
+        value: "false"
+      - key: ENABLE_DIRECT_CONNECTIONS
+        value: "false"
+      - key: ENABLE_IMAGE_GENERATION
+        value: "false"
+      - key: ENABLE_CODE_EXECUTION
+        value: "false"
+      - key: ENABLE_CODE_INTERPRETER
+        value: "false"
+      - key: WEBUI_AUTH
+        value: "true"
+      - key: WEBUI_NAME
+        value: "OpenWebUI"
+      - key: WEBUI_URL
+        value: "https://your-frontend-domain.vercel.app"
+      - key: CORS_ORIGINS
+        value: "https://your-frontend-domain.vercel.app"
+      - key: ATLAS_CLOUD_API_KEY
+        sync: false
+      - key: ATLAS_CLOUD_API_URL
+        value: "https://api.atlas.nomic.ai"
+      - key: ENABLE_API_KEY
+        value: "true"
+      - key: ENABLE_COMMUNITY_SHARING
+        value: "true"
+      - key: ENABLE_MESSAGE_RATING
+        value: "true"
+      - key: ENABLE_CHANNELS
+        value: "true"
+      - key: ENABLE_NOTES
+        value: "true"
+      - key: DEFAULT_USER_ROLE
+        value: "user"
+      - key: VECTOR_DB
+        value: "chroma"
+      - key: SRC_LOG_LEVELS
+        value: "INFO"
+      - key: GLOBAL_LOG_LEVEL
+        value: "INFO"
+    healthCheckPath: /docs
+    autoDeploy: true
+
+databases:
+  - name: openwebui-db
+    databaseName: openwebui
+    user: openwebui
+    plan: starter
+
+services:
+  - type: redis
+    name: openwebui-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
